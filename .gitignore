@@ -6,3 +6,8 @@ settings.json
 __pycache__/
 *.db
 static/**
+*.swp
+
+
+# Ignore dynaconf secret files
+.secrets.*
