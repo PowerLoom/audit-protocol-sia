@@ -1,8 +1,19 @@
 {
-  "REDIS": {
-    "HOST": "127.0.0.1",
-    "PORT": 6379,
-    "DB": 0,
-    "PASSWORD": null
-  }
+	"seed": "THISISRANDOMSEED",
+	"REDIS": {
+		"HOST": "127.0.0.1",
+		"PORT": 6379,
+		"DB": 0,
+		"PASSWORD": null
+	  },
+
+	"table_names": {
+		"api_keys": "api_keys",
+		"accounting_records": "accounting_records",
+		"retreivals_single":"retreivals_single",
+		"retreivals_bulk":"retreivals_bulk"
+	},
+    "audit_contract" : "0x25d37e41efb83a1da244abc5b5562f72304a4e2f",
+	"file_storage": "skynet",
+    "powergate_url":"192.168.99.100:5002"
 }
