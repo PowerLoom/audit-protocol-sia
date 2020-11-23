@@ -1,0 +1,283 @@
+{
+	"info": {
+		"_postman_id": "e1d1bbc1-c50e-4fd7-b0cf-cd657c75df83",
+		"name": "PowerLoom-PreAlpha",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Create new API key",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "3f99bf43-4a8e-4791-9e53-8d0dc0b6471e",
+						"exec": [
+							"pm.test(\"Test Api Key\",function() {",
+							"    pm.response.to.have.status(200);",
+							"})"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\"hotEnabled\": true}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:9000/create",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9000",
+					"path": [
+						"create"
+					]
+				},
+				"description": "hotEnabled False causes troubles with localnet, it could not finalize the storage mining. Dafuq."
+			},
+			"response": []
+		},
+		{
+			"name": "Commit payload",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "a9bf3c25-72d5-42e9-b367-89f8397585aa",
+						"exec": [
+							"pm.test(\"Test Duploicate Payload\", function(){",
+							"    pm.expect(pm.response.code).to.not.equal(500);",
+							"})",
+							"",
+							"pm.test(\"403 Forbidden\", function() {",
+							"    pm.expect(pm.response.code).to.not.equal(403);",
+							"})",
+							"",
+							"pm.test(\"Test Success\", function() {",
+							"    pm.expect(pm.response.code).to.equal(200);",
+							"})"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Auth-Token",
+						"value": "08b8ed72-fe96-4ede-9ae3-93c016aabc09",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"payload\": \"asdsdasd asda sdasd asd asd\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://localhost:9000",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9000"
+				},
+				"description": "pass Auth-Token in headers: apiKey obtained from create"
+			},
+			"response": [
+				{
+					"name": "Commit payload",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Auth-Token",
+								"value": "5d7fc98f-7c47-46c0-b32a-8504cb9a2a31",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"payload\": \"Ranodm Pasdsdasdasdasdadadadadadadadadadadadadadadadad\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:9000",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "9000"
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 23 Nov 2020 13:57:08 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "132"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"commitTx\": \"0xf68b87b4c8584a8cd7eb4a4b840a2092d40311c24fe74bf8ea854655f9b89f4a\",\n    \"recordCid\": \"a93b6865-de2a-4361-b53f-5df6b0e08dd6\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Initiate a retrieval request behind the scenes",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "2fcdd9a1-6696-4230-9e80-29d0213cb46d",
+						"exec": [
+							"pm.test(\"403 Forbidden\", function() {",
+							"    pm.expect(pm.response.code).to.not.equal(403);",
+							"})",
+							"",
+							"pm.test(\"Test Success\", function() {",
+							"    pm.expect(pm.response.code).to.equal(200);",
+							"})"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:9000/payload/00f26bcf-0fd5-41be-bc11-d7ae4ba7d2c4",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9000",
+					"path": [
+						"payload",
+						"00f26bcf-0fd5-41be-bc11-d7ae4ba7d2c4"
+					]
+				},
+				"description": "Pass record CID obtained from committing payload from HTTP POST on /"
+			},
+			"response": []
+		},
+		{
+			"name": "Get request status update",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:9000/requests/66f97e4e-23a9-46b9-95a8-fbbf21289cd3/",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9000",
+					"path": [
+						"requests",
+						"66f97e4e-23a9-46b9-95a8-fbbf21289cd3",
+						""
+					]
+				},
+				"description": "Use request ID obtained from initiating retrieval request on call to /payload"
+			},
+			"response": []
+		},
+		{
+			"name": "Get recordCids of all payloads. Optional retrieval mode.",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"id": "ba076f94-5c50-42c5-97bf-7b7939ad6980",
+						"exec": [
+							"pm.test(\"403 Forbidden\", function() {",
+							"    pm.expect(pm.response.code).to.not.equal(403);",
+							"})",
+							"",
+							"pm.test(\"Test Success\", function() {",
+							"    pm.expect(pm.response.code).to.equal(200);",
+							"})"
+						],
+						"type": "text/javascript"
+					}
+				}
+			],
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Auth-Token",
+						"value": "08b8ed72-fe96-4ede-9ae3-93c016aabc09",
+						"type": "text"
+					},
+					{
+						"key": "",
+						"value": "",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"url": {
+					"raw": "http://localhost:9000/payloads?retrieval=true",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9000",
+					"path": [
+						"payloads"
+					],
+					"query": [
+						{
+							"key": "retrieval",
+							"value": "true"
+						},
+						{
+							"key": "start_index",
+							"value": "2",
+							"disabled": true
+						}
+					]
+				},
+				"description": "Pass Auth-Token in header"
+			},
+			"response": []
+		}
+	],
+	"protocolProfileBehavior": {}
+}
