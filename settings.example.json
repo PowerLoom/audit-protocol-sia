@@ -11,9 +11,12 @@
 		"api_keys": "api_keys",
 		"accounting_records": "accounting_records",
 		"retreivals_single":"retreivals_single",
-		"retreivals_bulk":"retreivals_bulk"
+		"retreivals_bulk":"retreivals_bulk",
+		"skynet_table":"skynet_table"
 	},
     "audit_contract" : "0x25d37e41efb83a1da244abc5b5562f72304a4e2f",
 	"file_storage": "skynet",
-    "powergate_url":"192.168.99.100:5002"
+    "powergate_url":"192.168.99.100:5002",
+	"file_upload_method": "sia"
+	
 }
