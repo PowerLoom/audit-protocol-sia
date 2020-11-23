@@ -4,7 +4,7 @@
 	let api_url = "http://localhost:9200";
 	export const mainAPI = axios.create({
 		baseURL: api_url,
-		timeout: 5000
+		timeout: 30000
 	});
 	let apiKey = "";
 	mainAPI.interceptors.request.use(async function (config) {
@@ -22,15 +22,20 @@
 	let submitting = false;
 	let downloadLink = "";
 	let payload = "";
+	let loadingPayloads = false;
 	const requestDownload = async(id) => {
 		console.log('requesting', id);
 		downloadLink = "";
 		requesting = true;
 		const request = await mainAPI.get('/payload/'+id);
 		console.log('status', request.data.requestStatus);
-		if (request.data.requestStatus == "Completed"){
-			const checkRequest = await mainAPI.get('/requests/'+request.data.requestId);
-			downloadLink = api_url+checkRequest.data.downloadFile;
+		if (request.data.fileLink || request.data.requestStatus == "Completed"){
+			if (request.data.fileLink){
+				downloadLink = api_url+request.data.fileLink;
+			} else {
+				const checkRequest = await mainAPI.get('/requests/'+request.data.requestId);
+				downloadLink = api_url+checkRequest.data.downloadFile;
+			}
 			setTimeout(() => {showModal = true; requesting = false;}, 1000);
 		} else {
 			setTimeout(() => {showModal = true; requesting = false;}, 1000);
@@ -64,7 +69,9 @@
 	});
 
 	const getPayloads = async() => {
+		loadingPayloads = true;
 		const request = await mainAPI.get('/payloads?retrieval=false');
+		loadingPayloads = false;
 		let p = [];
 		for (let i=0; i<request.data.payloads.length; i++){
 			p.push(request.data.payloads[i]);
@@ -147,7 +154,20 @@
 				<div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
 					<!-- Replace with your content -->
 					<div class="">
-
+				{#if loadingPayloads}
+				<div class="border border-gray-300 shadow rounded-md p-4 max-w-sm w-full mx-auto">
+					<div class="animate-pulse flex space-x-4">
+						<div class="rounded-full bg-gray-400 h-12 w-12"></div>
+						<div class="flex-1 space-y-4 py-1">
+							<div class="h-4 bg-gray-400 rounded w-3/4"></div>
+							<div class="space-y-2">
+								<div class="h-4 bg-gray-400 rounded"></div>
+								<div class="h-4 bg-gray-400 rounded w-5/6"></div>
+							</div>
+						</div>
+					</div>
+				</div>
+				{/if}
 				<div class="bg-white shadow overflow-hidden sm:rounded-md">
 				<ul>
 				{#each payloads as payload, i}
@@ -159,7 +179,7 @@
 							{payload.recordCid}
 							</div>
 							<div class="ml-2 flex-shrink-0 flex">
-							{#if payload.status == "Pinned"}
+							{#if payload.status ==undefined || payload.status == "Pinned"}
 							<span class="px-4 py-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
 								Stored
 							</span>
