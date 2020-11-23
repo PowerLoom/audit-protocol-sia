@@ -1,4 +1,4 @@
-# svelte based frontend
+# svelte based frontend for Audit Protocol
 
 ## Get started
 
