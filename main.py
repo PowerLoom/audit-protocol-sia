@@ -20,8 +20,11 @@ import json
 import aioredis
 import redis
 import time
+import requests
+import hashlib
 from skydb import SkydbTable
 from config import settings
+import os
 
 formatter = logging.Formatter(u"%(levelname)-8s %(name)-4s %(asctime)s,%(msecs)d %(module)s-%(funcName)s: %(message)s")
 
@@ -36,6 +39,9 @@ rest_logger = logging.getLogger(__name__)
 rest_logger.setLevel(logging.DEBUG)
 rest_logger.addHandler(stdout_handler)
 rest_logger.addHandler(stderr_handler)
+
+r = redis.Redis()
+r.set('my_lock',0)
 
 # Setup skydb
 api_keys_table = SkydbTable(
@@ -52,19 +58,27 @@ accounting_records_table = SkydbTable(
 			verbose=1
 		)
 
-retreivals_single_table = SkydbTable(
-			table_name=settings.table_names.retreivals_single,
-			columns=['requestID','cid','localCID','retreived_file','completed'],
-			seed=settings.seed,
-			verbose=1
-		)
-
-retreivals_bulk_table = SkydbTable(
-			table_name=settings.table_names.retreivals_bulk,
-			columns=['requestID','api_key','token','retreived_file','completed'],
-			seed=settings.seed,
-			verbose=1
-		)
+#retreivals_single_table = SkydbTable(
+#			table_name=settings.table_names.retreivals_single,
+#			columns=['requestID','cid','localCID','retreived_file','completed'],
+#			seed=settings.seed,
+#			verbose=1
+#		)
+#
+#retreivals_bulk_table = SkydbTable(
+#			table_name=settings.table_names.retreivals_bulk,
+#			columns=['requestID','api_key','token','retreived_file','completed'],
+#			seed=settings.seed,
+#			verbose=1
+#		)
+#
+#skynet_table = SkydbTable(
+#			table_name = settings.table_name.skynet_table,
+#			columns=['api_key','file_id'],
+#			seed=settings.seed,
+#			verbose=1
+#		)
+#
 
 # setup CORS origins stuff
 origins = ["*"]
@@ -147,106 +161,78 @@ async def load_user_from_auth(
 			break
 		v = redis_lock.decr('my_lock')
 		time.sleep(0.01)
+	print(row)
 	ffs_token = row[next(iter(row.keys()))]['token']
 	return {'token': ffs_token, 'api_key': api_key_in_header}
 
 
+#:@app.post('/create')
+#:async def create_filecoin_filesystem(
+#:		request: Request
+#:):
+#:	req_json = await request.json()
+#:	hot_enabled = req_json.get('hotEnabled', True)
+#:	pow_client = PowerGateClient(settings.powergate_url, False)
+#:	new_ffs = pow_client.ffs.create()
+#:	rest_logger.info('Created new FFS')
+#:	rest_logger.info(new_ffs)
+#:	if not hot_enabled:
+#:		default_config = pow_client.ffs.default_config(new_ffs.token)
+#:		rest_logger.debug(default_config)
+#:		new_storage_config = STORAGE_CONFIG
+#:		new_storage_config['cold']['filecoin']['addr'] = default_config.default_storage_config.cold.filecoin.addr
+#:		new_storage_config['hot']['enabled'] = False
+#:		new_storage_config['hot']['allowUnfreeze'] = False
+#:		pow_client.ffs.set_default_config(json.dumps(new_storage_config), new_ffs.token)
+#:		rest_logger.debug('Set hot storage to False')
+#:		rest_logger.debug(new_storage_config)
+#:	# rest_logger.debug(type(default_config))
+#:	api_key = str(uuid4())
+#:	api_keys_table.add_row({'token':new_ffs.token,'api_key':api_key})
+#:
+#:	# Add row to skydb
+#:	
+#:	api_keys_table.add_row({'api_key':api_key, 'token':new_ffs.token})
+#:	rest_logger.debug("Added a row to api_keys_table")
+#:	return {'apiKey': api_key}
+
 @app.post('/create')
-async def create_filecoin_filesystem(
+async def get_create_api_key(
 		request: Request
-):
-	req_json = await request.json()
-	hot_enabled = req_json.get('hotEnabled', True)
-	pow_client = PowerGateClient(settings.powergate_url, False)
-	new_ffs = pow_client.ffs.create()
-	rest_logger.info('Created new FFS')
-	rest_logger.info(new_ffs)
-	if not hot_enabled:
-		default_config = pow_client.ffs.default_config(new_ffs.token)
-		rest_logger.debug(default_config)
-		new_storage_config = STORAGE_CONFIG
-		new_storage_config['cold']['filecoin']['addr'] = default_config.default_storage_config.cold.filecoin.addr
-		new_storage_config['hot']['enabled'] = False
-		new_storage_config['hot']['allowUnfreeze'] = False
-		pow_client.ffs.set_default_config(json.dumps(new_storage_config), new_ffs.token)
-		rest_logger.debug('Set hot storage to False')
-		rest_logger.debug(new_storage_config)
-	# rest_logger.debug(type(default_config))
+	):
 	api_key = str(uuid4())
-	api_keys_table.add_row({'token':new_ffs.token,'api_key':api_key})
-
-	# Add row to skydb
-	
-	api_keys_table.add_row({'api_key':api_key, 'token':new_ffs.token})
-	rest_logger.debug("Added a row to api_keys_table")
-	return {'apiKey': api_key}
-
+	token = str(uuid4())
+	api_keys_table.add_row({'token':token, 'api_key':api_key})
+	return {'apiKey':api_key}
 
 @app.get('/payloads')
 async def all_payloads(
 	request: Request,
 	response: Response,
 	api_key_extraction=Depends(load_user_from_auth),
-	retrieval: Optional[str] = Query(None)
+	start_index:Optional[int]=-1
 ):
 	rest_logger.debug('Api key extraction')
 	rest_logger.debug(api_key_extraction)
+	rest_logger.debug(start_index)
 	if not api_key_extraction:
 		response.status_code = status.HTTP_403_FORBIDDEN
 		return {'error': 'Forbidden'}
 	if not api_key_extraction['token']:
 		response.status_code = status.HTTP_403_FORBIDDEN
 		return {'error': 'Forbidden'}
-	retrieval_mode = False
-	if not retrieval:
-		retrieval_mode = False
-	else:
-		if retrieval == 'true':
-			retrieval_mode = True
-		elif retrieval == 'false':
-			retrieval_mode = False
 	ffs_token = api_key_extraction['token']
 	return_json = dict()
-	if retrieval_mode:
-		row = None
-		while True:
-			rest_logger.debug("Waiting for Lock")
-			v = redis_lock.incr('my_lock')
-			if v == 1:
-				row = retreivals_bulk_table.fetch(condition={'token':ffs_token}, start_index=retreivals_bulk_table.index-1, n_rows=1)
-				v = redis_lock.decr('my_lock')
-				break
-			v = redis_lock.decr('my_lock')
-			time.sleep(0.01)
-
-		if len(row) >= 1:
-			row = row[next(iter(row.keys()))]
-		if not row:
-			request_id = str(uuid4())
-			request_status = 'Queued'
-			request.app.sqlite_cursor.execute('''
-				INSERT INTO retrievals_bulk VALUES (?, ?, ?, "", 0)
-			''', (request_id, api_key_extraction['api_key'], ffs_token))
-			#request.app.sqlite_cursor.connection.commit()
-			retreivals_bulk_table.add_row({
-						'requestID':request_id,
-						'api_key':api_key_extraction['api_key'],
-						'token':ffs_token,
-						'retreived_file':"",
-						'completed':0
-					})
-		else:
-			request_id = row['requestID']
-			request_status = 'InProcess' if int(row['completed']) == 0 else 'Completed'
-		return_json.update({'requestId': request_id, 'requestStatus': request_status})
 	payload_list = list()
 	records_rows = None
+	if start_index == -1:
+		start_index = accounting_records_table.index-1
 	while True:
 		rest_logger.debug("Waiting for Lock")
 		v = redis_lock.incr('my_lock')
 		if v == 1:
 			records_rows = accounting_records_table.fetch(condition={'token':ffs_token}, 
-								start_index=accounting_records_table.index-1,
+								start_index=start_index,
 								n_rows=3)
 
 			v = redis_lock.decr('my_lock')
@@ -255,22 +241,13 @@ async def all_payloads(
 		time.sleep(0.01)
 	print(records_rows)
 	for row_index in records_rows:
+		file_,payload = sia_get(records_rows[row_index]['cid'])
 		payload_obj = {
 			'recordCid': records_rows[row_index]['localCID'],
 			'txHash': records_rows[row_index]['txHash'],
-			'timestamp': records_rows[row_index]['timestamp']
+			'timestamp': records_rows[row_index]['timestamp'],
+			'file_download': file_,
 		}
-		confirmed = int(records_rows[row_index]['confirmed'])
-		if confirmed == 0:
-			# response.status_code = status.HTTP_404_NOT_FOUND
-			payload_status = 'PendingPinning'
-		elif confirmed == 1:
-			payload_status = 'Pinned'
-		elif confirmed == 2:
-			payload_status = 'PinFailed'
-		else:
-			payload_status = 'unknown'
-		payload_obj['status'] = payload_status
 		payload_list.append(payload_obj)
 	return_json.update({'payloads': payload_list})
 	return return_json
@@ -285,7 +262,11 @@ def upload_to_sia(file_hash, file_content):
 		)
 	print(r.text)
 	
-def get(file_hash):
+def sia_get(file_hash):
+	files_ = os.listdir('static/')
+	if file_hash in files_:
+		data = open(f'static/{file_hash}','r').read()
+		return f'/static/{file_hash}', data
 	try:
 		r = requests.get(
 					url=f"http://localhost:9980/renter/stream/{file_hash}",
@@ -296,15 +277,14 @@ def get(file_hash):
 		print(e)
 		return None
 
-	f = open(f"files/{file_hash}", 'w')
+	f = open(f"static/{file_hash}", 'w')
 	data = r.text
 	f.write(data)
 	f.flush()
+	return (f"/static/{file_hash}", data)
 
 @app.get('/payload/{recordCid:str}')
 async def record(request: Request, response:Response, recordCid: str):
-	# record_chain = contract.getTokenRecordLogs('0x'+keccak(text=tokenId).hex())
-	# skydb fetching
 	row = None
 	while True:
 		rest_logger.debug("Waiting for Lock")
@@ -318,102 +298,10 @@ async def record(request: Request, response:Response, recordCid: str):
 	assert len(row) >= 1, "No row found"
 	index = list(row.keys())[0]
 	row = row[index]
-	confirmed = int(row['confirmed'])
 	real_cid = row['cid']
 	ffs_token = row['token']
-	# pow_client = PowerGateClient(fast_settings.config.powergate_url, False)
-	# check = pow_client.ffs.info(real_cid, ffs_token)
-	# rest_logger.debug(check)
-
-	row = None
-	while True:
-		rest_logger.debug("Waiting for Lock")
-		v = redis_lock.incr('my_lock')
-		if v == 1:
-			row = retreivals_single_table.fetch(condition={'cid':real_cid}, start_index=retreivals_single_table.index-1, n_rows=1)
-			v = redis_lock.decr('my_lock')
-			break
-		v = redis_lock.decr('my_lock')
-		time.sleep(0.01)
-	if row:
-		row = row[next(iter(row.keys()))]
-		request_id = row['requestID']
-		request_status = int(row['completed'])
-		if request_status == 0:
-			request_status = 'InProcess'
-		else:
-			request_status = 'Completed'
-	else:
-		request_id = str(uuid4())
-		request_status = 'Queued'
-	# if real_cid in check.info.pins:
-	#	 rest_logger.info('CID Found in Pinned!')
-	#
-	#	 rest_logger.debug("Retrieving file " + real_cid + " from FFS.")
-	#	 file_ = pow_client.ffs.get(real_cid, ffs_token)
-	#	 file_name = f'static/{request_id}'
-	#	 rest_logger.debug('Saving to ' + file_name)
-	#	 with open(file_name, 'wb') as f_:
-	#		 for _ in file_:
-	#			 f_.write(_)
-	#	 return {'requestId': request_id, 'downloadFile': file_name}
-	if confirmed == 0:
-		# response.status_code = status.HTTP_404_NOT_FOUND
-		payload_status = 'PendingPinning'
-	elif confirmed == 1:
-		payload_status = 'Pinned'
-	elif confirmed == 2:
-		payload_status = 'PinFailed'
-	else:
-		payload_status = 'unknown'
-	if confirmed in range(0, 2):
-		request.app.sqlite_cursor.execute("""
-			INSERT INTO retrievals_single VALUES (?, ?, ?, "", 0)
-		""", (request_id, real_cid, recordCid))
-		#request.app.sqlite_cursor.connection.commit()
-
-		retreivals_single_table.add_row({
-					'requestID':request_id,
-					'cid':real_cid,
-					'localCID':recordCid,
-					'retreived_file':"",
-					'completed':0
-				})
-
-	return {'requestId': request_id, 'requestStatus': request_status, 'payloadStatus': payload_status}
-
-
-@app.get('/requests/{requestId:str}')
-async def request_status(request: Request, requestId: str):
-
-	row = None
-	while True:
-		rest_logger.debug("Waiting for Lock")
-		v = redis_lock.incr('my_lock')
-		if v == 1:
-			row = retreivals_single_table.fetch(condition={'requestID':requestId}, start_index=retreivals_single_table.index-1, n_rows=1)
-			v = redis_lock.decr('my_lock')
-			break
-		v = redis_lock.decr('my_lock')
-		time.sleep(0.01)
-	row = row[next(iter(row.keys()))]
-
-	if row:
-		#return {'requestID': requestId, 'completed': bool(res[4]), "downloadFile": res[3]}
-		return {'requestID':requestId, 'completed': bool(int(row['completed'])), "downloadFile":row['retreived_file']}
-	else:
-		c_bulk_row = None
-		while True:
-			rest_logger.debug("Waiting for Lock")
-			v = redis_lock.incr('my_lock')
-			if v == 1:
-				c_bulk_row = retreivals_bulk_table.fetch(condition={'requestID':requestId}, start_index=retreivals_bulk_table.index-1)
-				v = redis_lock.decr('my_lock')
-				break
-			v = redis_lock.decr('my_lock')
-			time.sleep(0.01)
-		return {'requestID': requestId, 'completed': bool(int(c_bulk_row['completed'])), 
-				"downloadFile": c_bulk_row['retreived_file']}
+	file_, payload = sia_get(row['cid'])
+	return {'fileLink': file_, 'payload':payload}
 
 
 
@@ -432,22 +320,26 @@ async def root(
 	if not api_key_extraction['token']:
 		response.status_code = status.HTTP_403_FORBIDDEN
 		return {'error': 'Forbidden'}
-	pow_client = PowerGateClient(fast_settings.config.powergate_url, False)
+	#pow_client = PowerGateClient(fast_settings.config.powergate_url, False)
 	# if request.method == 'POST':
 	req_args = await request.json()
 	payload = req_args['payload']
 	token = api_key_extraction['token']
-	payload_bytes = BytesIO(payload.encode('utf-8'))
-	payload_iter = bytes_to_chunks(payload_bytes)
-	# adds to hot tier, IPFS
-	stage_res = pow_client.ffs.stage(payload_iter, token=token)
-	rest_logger.debug('Staging level results:')
-	rest_logger.debug(stage_res)
-	# uploads to filecoin
-	push_res = pow_client.ffs.push(stage_res.cid, token=token)
-	rest_logger.debug('Cold tier finalization results:')
-	rest_logger.debug(push_res)
-	await request.app.redis_pool.publish_json('new_deals', {'cid': stage_res.cid, 'jid': push_res.job_id, 'token': token})
+	h = hashlib.sha256()
+	h.update(payload.encode())
+	sha_payload_hash = h.hexdigest()
+	upload_to_sia(sha_payload_hash, payload)
+	#payload_bytes = BytesIO(payload.encode('utf-8'))
+	#payload_iter = bytes_to_chunks(payload_bytes)
+	## adds to hot tier, IPFS
+	#stage_res = pow_client.ffs.stage(payload_iter, token=token)
+	#rest_logger.debug('Staging level results:')
+	#rest_logger.debug(stage_res)
+	## uploads to filecoin
+	#push_res = pow_client.ffs.push(stage_res.cid, token=token)
+	#rest_logger.debug('Cold tier finalization results:')
+	#rest_logger.debug(push_res)
+	#await request.app.redis_pool.publish_json('new_deals', {'cid': stage_res.cid, 'jid': push_res.job_id, 'token': token})
 	payload_hash = '0x' + keccak(text=payload).hex()
 	token_hash = '0x' + keccak(text=token).hex()
 	tx_hash_obj = contract.commitRecordHash(**dict(
@@ -461,22 +353,15 @@ async def root(
 	timestamp = int(time.time())
 	rest_logger.debug("Adding row to accounting_records_table")
 	# Add row to skydb
-	print(f"Adding cid: {stage_res.cid}")
+	#print(f"Adding cid: {stage_res.cid}")
 	accounting_records_table.add_row({
 				'token':token,
-				'cid':stage_res.cid,
+				'cid':sha_payload_hash,
 				'localCID':local_id,
 				'txHash':tx_hash,
-				'confirmed':0,
-				'timestamp':timestamp
+				'timestamp':timestamp,
+				'confirmed':-1,
+
 			})
 
 	return {'commitTx': tx_hash, 'recordCid': local_id}
-	# if request.method == 'GET':
-	#	 healthcheck = pow_client.health.check()
-	#	 rest_logger.debug('Health check:')
-	#	 rest_logger.debug(healthcheck)
-	#	 return {'status': healthcheck}
-
-
-
