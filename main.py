@@ -54,7 +54,7 @@ api_keys_table = SkydbTable(
 
 accounting_records_table = SkydbTable(
 			table_name=settings.table_names.accounting_records,
-			columns=['token','cid','localCID','txHash','confirmed','timestamp', 'f_method'],
+			columns=['token','cid','localCID','txHash','confirmed','timestamp', ],
 			seed=settings.seed,
 			#verbose=1
 		)
