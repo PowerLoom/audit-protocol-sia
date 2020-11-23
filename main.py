@@ -5,16 +5,15 @@ from fastapi.security.api_key import APIKeyQuery, APIKeyHeader, APIKey
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import RedirectResponse, JSONResponse
-from pygate_grpc.client import PowerGateClient
-from pygate_grpc.ffs import get_file_bytes, bytes_to_chunks, chunks_to_bytes
-from google.protobuf.json_format import MessageToDict
-from pygate_grpc.ffs import bytes_to_chunks
+#from pygate_grpc.client import PowerGateClient
+#from pygate_grpc.ffs import get_file_bytes, bytes_to_chunks, chunks_to_bytes
+#from google.protobuf.json_format import MessageToDict
+#from pygate_grpc.ffs import bytes_to_chunks
 from eth_utils import keccak
 from io import BytesIO
 from maticvigil.EVCore import EVCore
 from uuid import uuid4
 import sqlite3
-import fast_settings
 import logging
 import sys
 import json
@@ -22,6 +21,7 @@ import aioredis
 import redis
 import time
 from skydb import SkydbTable
+from config import settings
 
 formatter = logging.Formatter(u"%(levelname)-8s %(name)-4s %(asctime)s,%(msecs)d %(module)s-%(funcName)s: %(message)s")
 
@@ -39,27 +39,31 @@ rest_logger.addHandler(stderr_handler)
 
 # Setup skydb
 api_keys_table = SkydbTable(
-			table_name="api_keys",
+			table_name=settings.table_names.api_keys,
 			columns=["api_key","token"],
-			seed="qwerasdfzxcv"
+			seed=settings.seed,
+			verbose=1
 		)
 
 accounting_records_table = SkydbTable(
-			table_name='accounting_records',
+			table_name=settings.table_names.accounting_records,
 			columns=['token','cid','localCID','txHash','confirmed','timestamp'],
-			seed='qwerasdfzxcv'
+			seed=settings.seed,
+			verbose=1
 		)
 
 retreivals_single_table = SkydbTable(
-			table_name='retreivals_single',
+			table_name=settings.table_names.retreivals_single,
 			columns=['requestID','cid','localCID','retreived_file','completed'],
-			seed='qwerasdfzxcv'
+			seed=settings.seed,
+			verbose=1
 		)
 
 retreivals_bulk_table = SkydbTable(
-			table_name='retreivals_bulk',
+			table_name=settings.table_names.retreivals_bulk,
 			columns=['requestID','api_key','token','retreived_file','completed'],
-			seed='qwerasdfzxcv',
+			seed=settings.seed,
+			verbose=1
 		)
 
 # setup CORS origins stuff
@@ -79,12 +83,10 @@ app.mount('/static', StaticFiles(directory='static'), name='static')
 
 evc = EVCore(verbose=True)
 contract = evc.generate_contract_sdk(
-	contract_address=fast_settings.config.audit_contract,
+	contract_address=settings.audit_contract,
 	app_name='auditrecords'
 )
 
-with open('settings.json') as f:
-	settings = json.load(f)
 
 REDIS_CONN_CONF = {
 	"host": settings['REDIS']['HOST'],
@@ -155,7 +157,7 @@ async def create_filecoin_filesystem(
 ):
 	req_json = await request.json()
 	hot_enabled = req_json.get('hotEnabled', True)
-	pow_client = PowerGateClient(fast_settings.config.powergate_url, False)
+	pow_client = PowerGateClient(settings.powergate_url, False)
 	new_ffs = pow_client.ffs.create()
 	rest_logger.info('Created new FFS')
 	rest_logger.info(new_ffs)
@@ -389,22 +391,6 @@ async def request_status(request: Request, requestId: str):
 				"downloadFile": c_bulk_row['retreived_file']}
 
 
-@app.post('/stage')
-async def stage_file(
-		request: Request, 
-		response: Response,
-		api_key_extraction=Depends(load_user_from_auth)
-		):
-	pow_client = PowerGateClient(fast_settings.config.powergate_url, False)
-	# if request.method == 'POST':
-	req_args = await request.json()
-	payload = req_args['payload']
-	token = api_key_extraction['token']
-	payload_bytes = BytesIO(payload.encode('utf-8'))
-	payload_iter = bytes_to_chunks(payload_bytes)
-	# adds to hot tier, IPFS
-	stage_res = pow_client.ffs.stage(payload_iter, token=token)
-	return {'cid': stage_res.cid}
 
 
 # This function is responsible for committing payload
@@ -466,3 +452,28 @@ async def root(
 	#	 rest_logger.debug('Health check:')
 	#	 rest_logger.debug(healthcheck)
 	#	 return {'status': healthcheck}
+
+def upload_to_sia(file_hash, file_content):
+	headers = {'user-agent': 'Sia-Agent', 'content-type': 'application/octet-stream'}	
+	r = requests.post(
+			url=f"http://localhost:9980/renter/uploadstream/{file_hash}?datapieces=10&paritypieces=20",
+			headers=headers,
+			data=file_content
+		)
+	print(r.text)
+	
+def get(file_hash):
+	try:
+		r = requests.get(
+					url=f"http://localhpst:9980/renter/stream/{file_hash}",
+					headers={'user-agent': 'Sia-Agent'},
+					stream=True
+				)
+	except Exception as e:
+		return None
+
+	f = open(f"files/{file_hash}")
+	for chunk in r.iter_content(chunk_size=1024 * 50):  # 50 kB chunks
+		# tornado_logger.debug('Writing chunk to bytes stream')
+		f.write(chunk)
+	await f.flush()
