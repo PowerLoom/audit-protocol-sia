@@ -17,5 +17,5 @@ pycparser==2.20
 PyNaCl==1.4.0
 requests==2.25.0
 six==1.15.0
-urllib3==1.26.2
+urllib3==1.26.3
 dynaconf==3.1.2
